@@ -18,7 +18,6 @@ const GOAL_LEFT = 250;
 const GOAL_RIGHT = 550;
 const GOAL_Y = 50;
 const SAVE_ZONE_Y = 120;
-
 const BALL_START_X = 390;
 const BALL_START_Y = 500;
 
@@ -29,6 +28,11 @@ let level = 1;
 let shotsLeft = 3;
 let aimAngle = 0;
 let power = 6;
+let currentState = null;
+let currentAction = null;
+
+// DIVE SYSTEM
+let diveTimer = 0;
 
 // BALL
 let ball = {
@@ -47,7 +51,8 @@ let goalie = {
     width: 100,
     height: 20,
     speed: 3,
-    direction: 1
+    direction: 1,
+    baseY: 70
 };
 
 // DEFENDERS
@@ -110,12 +115,12 @@ function resetBall() {
     power = 6;
 
     goalie.x = 350;
+    goalie.y = goalie.baseY;
     goalie.direction = Math.random() < 0.5 ? -1 : 1;
 
+    diveTimer = 0;
     bounceCooldown = 0;
 }
-
-let currentState, currentAction;
 
 // GAME LOOP
 let loop = GameLoop({
@@ -128,7 +133,6 @@ let loop = GameLoop({
             shotsLeft = 3;
             result = "";
             gameStarted = true;
-            goalie.direction = Math.random() < 0.5 ? -1 : 1;
         }
 
         if (!gameStarted) return;
@@ -156,8 +160,12 @@ let loop = GameLoop({
             currentState = getState(ball.x, ball.dx);
             currentAction = chooseAction(currentState);
 
-            // LOCK dive
+            if (currentAction === 0) {
+                currentAction = Math.random() < 0.5 ? -1 : 1;
+            }
+
             goalie.direction = currentAction;
+            diveTimer = 18; // ← dive duration
         }
 
         // MOVE BALL
@@ -166,27 +174,38 @@ let loop = GameLoop({
             ball.y += ball.dy;
         }
 
-        // GOALIE MOVEMENT (FIXED PROPERLY)
+        // GOALIE MOVEMENT
         if (!ball.moving) {
             // patrol
             goalie.x += goalie.direction * goalie.speed;
 
             if (goalie.x <= GOAL_LEFT) goalie.direction = 1;
             if (goalie.x + goalie.width >= GOAL_RIGHT) goalie.direction = -1;
-        } else {
-            // REAL dive
-            goalie.x += goalie.direction * (goalie.speed * 2.5);
+
+            goalie.y = goalie.baseY;
+        }
+        else {
+            if (diveTimer > 0) {
+                // DIVE (fast + forward motion)
+                goalie.x += currentAction * (goalie.speed * 3);
+                goalie.y += 1.2; // forward motion
+                diveTimer--;
+            }
+            else {
+                // recovery (snap back)
+                goalie.y += (goalie.baseY - goalie.y) * 0.2;
+            }
         }
 
         // clamp
         goalie.x = Math.max(GOAL_LEFT, Math.min(goalie.x, GOAL_RIGHT - goalie.width));
 
-        // DEFENDER COLLISION
+        // DEFENDER COLLISION (UNCHANGED)
         for (let d of defenders) {
             let cx = d.x + d.width / 2;
             let cy = d.y + d.height / 2;
-
             let angle = d.angle * Math.PI / 180;
+
             let cos = Math.cos(-angle);
             let sin = Math.sin(-angle);
 
@@ -314,7 +333,6 @@ let loop = GameLoop({
         // AIM
         if (!ball.moving) {
             let rad = aimAngle * Math.PI / 180;
-
             context.beginPath();
             context.moveTo(ball.x, ball.y);
             context.lineTo(
