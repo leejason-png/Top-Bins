@@ -1,214 +1,171 @@
-import {
-    init,
-    GameLoop,
-    keyPressed,
-    initKeys
-} from 'https://unpkg.com/kontra/kontra.mjs';
+import { init, GameLoop, keyPressed, initKeys } from 'https://unpkg.com/kontra/kontra.mjs';
 
 let { canvas, context } = init();
 initKeys();
 
-// ─── Q LEARNING ───────────────────────────────────────────────────────────────
-let Q = {};
-const ACTIONS = [-1, 0, 1];
-
-const ALPHA = 0.01;
-const GAMMA = 0.9;
-const EPSILON = 0.2;
-
-let currentState = null;
-let currentAction = null;
-
-// ─── CONSTANTS ────────────────────────────────────────────────────────────────
-const GOAL_LEFT   = 250;
-const GOAL_RIGHT  = 550;
-const GOAL_Y      = 50;
-const SAVE_ZONE_Y = 120;
-
-const BALL_START_X = 390;
-const BALL_START_Y = 500;
-
-const MAX_SHOTS = 5;
-
-const AIM_RANGE  = 45;
-const AIM_SPEED  = 2;
-
-const MIN_POWER = 4;
-const MAX_POWER = 12;
-const POWER_CHARGE_SPEED = 0.1;
-
-// ─── CANVAS ───────────────────────────────────────────────────────────────────
 canvas.width = 800;
 canvas.height = 600;
 canvas.style.background = "#2e8b57";
 
-// ─── STATE ────────────────────────────────────────────────────────────────────
+// Q LEARNING
+let Q = {};
+const ACTIONS = [-1, 0, 1];
+let EPSILON = 0.3;
+const ALPHA = 0.05;
+
+// CONSTANTS
+const GOAL_LEFT = 250;
+const GOAL_RIGHT = 550;
+const GOAL_Y = 50;
+const SAVE_ZONE_Y = 120;
+const BALL_START_X = 390;
+const BALL_START_Y = 500;
+
+// GAME STATE
 let gameStarted = false;
 let result = "";
-let finalResult = "";
+let level = 1;
+let shotsLeft = 3;
 let aimAngle = 0;
-let power = MIN_POWER;
-let score = 0;
-let shots = 0;
+let power = 6;
+let currentState = null;
+let currentAction = null;
 
-// ─── BALL ─────────────────────────────────────────────────────────────────────
+// DIVE SYSTEM
+let diveTimer = 0;
+
+// BALL
 let ball = {
     x: BALL_START_X,
     y: BALL_START_Y,
-    radius: 15,
+    radius: 12,
     moving: false,
     dx: 0,
     dy: 0
 };
 
-// ─── GOALIE ───────────────────────────────────────────────────────────────────
+// GOALIE
 let goalie = {
     x: 350,
     y: 70,
     width: 100,
     height: 20,
     speed: 3,
-    direction: 0
+    direction: 1,
+    baseY: 70
 };
 
-// ─── Q HELPERS ────────────────────────────────────────────────────────────────
-function getState(x, dx, powerVal) {
-    let bucket = Math.floor((x - GOAL_LEFT) / ((GOAL_RIGHT - GOAL_LEFT) / 5));
+// DEFENDERS
+let defenders = [];
+let bounceCooldown = 0;
+
+// Q HELPERS
+function getState(x, dx) {
+    let bucket = Math.floor((x - GOAL_LEFT) / 60);
     bucket = Math.max(0, Math.min(4, bucket));
-
-    let dir = 0;
-    if (dx < -1) dir = -1;
-    else if (dx > 1) dir = 1;
-
-    let powerBucket = Math.floor((powerVal - MIN_POWER) / ((MAX_POWER - MIN_POWER) / 3));
-    powerBucket = Math.max(0, Math.min(2, powerBucket));
-
-    return `${bucket}_${dir}_${powerBucket}`;
+    let dir = dx < -1 ? -1 : dx > 1 ? 1 : 0;
+    return `${bucket}_${dir}`;
 }
 
 function chooseAction(state) {
     if (!Q[state]) Q[state] = { "-1": 0, "0": 0, "1": 0 };
 
     if (Math.random() < EPSILON) {
-        return ACTIONS[Math.floor(Math.random() * ACTIONS.length)];
+        return ACTIONS[Math.floor(Math.random() * 3)];
     }
 
-    let best = 0;
-    let bestVal = -Infinity;
-
-    for (let a of ACTIONS) {
-        if (Q[state][a] > bestVal) {
-            bestVal = Q[state][a];
-            best = a;
-        }
-    }
-
-    return best;
+    return parseInt(Object.entries(Q[state]).reduce((a, b) => b[1] > a[1] ? b : a)[0]);
 }
 
 function updateQ(state, action, reward) {
     if (!Q[state]) Q[state] = { "-1": 0, "0": 0, "1": 0 };
-
     Q[state][action] += ALPHA * (reward - Q[state][action]);
 }
 
-// ─── BACKGROUND TRAINING ──────────────────────────────────────────────────────
-function trainAI(iterations = 2000) {
-    for (let i = 0; i < iterations; i++) {
-
-        let x = BALL_START_X;
-        let y = BALL_START_Y;
-
-        let angle = (Math.random() * AIM_RANGE * 2 - AIM_RANGE) * Math.PI / 180;
-        let p = Math.random() * (MAX_POWER - MIN_POWER) + MIN_POWER;
-
-        let dx = Math.sin(angle) * p;
-        let dy = -Math.cos(angle) * p;
-
-        let goalieX = 350;
-
-        let state = getState(x, dx, p);
-        let action = chooseAction(state);
-
-        while (y > GOAL_Y) {
-            x += dx;
-            y += dy;
-
-            if (action === -1) goalieX -= 3;
-            if (action === 1) goalieX += 3;
-
-            goalieX = Math.max(GOAL_LEFT, Math.min(goalieX, GOAL_RIGHT - 100));
-
-            let hit =
-                y < SAVE_ZONE_Y &&
-                x > goalieX &&
-                x < goalieX + 100;
-
-            if (hit) {
-                updateQ(state, action, +1);
-                break;
-            }
-        }
-
-        if (y <= GOAL_Y) {
-            let within = x > GOAL_LEFT && x < GOAL_RIGHT;
-            if (within) updateQ(state, action, -1);
-        }
+// LEVELS
+function generateDefenders() {
+    if (level === 1) {
+        defenders = [{ x: 550, y: 250, width: 20, height: 100, angle: 0 }];
+    } else if (level === 2) {
+        defenders = [
+            { x: 280, y: 300, width: 120, height: 20, angle: 15 },
+            { x: 400, y: 200, width: 120, height: 20, angle: 30 }
+        ];
+    } else {
+        defenders = [
+            { x: 250, y: 320, width: 120, height: 20, angle: 25 },
+            { x: 420, y: 260, width: 120, height: 20, angle: -25 },
+            { x: 330, y: 180, width: 120, height: 20, angle: 15 }
+        ];
     }
 }
 
-// ─── RESET ────────────────────────────────────────────────────────────────────
+function applyLevelDifficulty() {
+    goalie.speed = 2 + level * 0.5;
+    EPSILON = Math.max(0.05, 0.4 - level * 0.03);
+}
+
+// RESET
 function resetBall() {
     ball.x = BALL_START_X;
     ball.y = BALL_START_Y;
     ball.moving = false;
     ball.dx = 0;
     ball.dy = 0;
+    power = 6;
 
-    power = MIN_POWER;
     goalie.x = 350;
-    goalie.direction = 0;
+    goalie.y = goalie.baseY;
+    goalie.direction = Math.random() < 0.5 ? -1 : 1;
+
+    diveTimer = 0;
+    bounceCooldown = 0;
 }
 
-// ─── GAME LOOP ────────────────────────────────────────────────────────────────
+// GAME LOOP
 let loop = GameLoop({
-
     update() {
 
+        // START
         if (!gameStarted && keyPressed("enter")) {
-            trainAI(2000); // 🔥 background training
-
-            gameStarted = true;
+            applyLevelDifficulty();
+            generateDefenders();
+            shotsLeft = 3;
             result = "";
-            finalResult = "";
-            aimAngle = 0;
-            power = MIN_POWER;
+            gameStarted = true;
         }
 
         if (!gameStarted) return;
 
-        // AIM + POWER (UNCHANGED)
+        // AIM
         if (!ball.moving) {
-            if (keyPressed("arrowleft"))  aimAngle = Math.max(-AIM_RANGE, aimAngle - AIM_SPEED);
-            if (keyPressed("arrowright")) aimAngle = Math.min( AIM_RANGE, aimAngle + AIM_SPEED);
-            if (keyPressed("arrowdown"))  aimAngle = 0;
+            if (keyPressed("arrowleft")) aimAngle = Math.max(-45, aimAngle - 2);
+            if (keyPressed("arrowright")) aimAngle = Math.min(45, aimAngle + 2);
+            if (keyPressed("arrowdown")) aimAngle = 0;
 
-            if (keyPressed("arrowup")) power = Math.min(MAX_POWER, power + POWER_CHARGE_SPEED);
-            else power = Math.max(MIN_POWER, power - POWER_CHARGE_SPEED);
+            if (keyPressed("arrowup")) power = Math.min(12, power + 0.1);
+            else power = Math.max(4, power - 0.1);
         }
 
-        // SHOOT + AI
-        if (keyPressed("space") && !ball.moving) {
+        // SHOOT
+        if (!ball.moving && keyPressed("space")) {
             ball.moving = true;
 
-            const rad = (aimAngle * Math.PI) / 180;
-            ball.dx = Math.sin(rad) * power;
-            ball.dy = -Math.cos(rad) * power;
+            let rad = aimAngle * Math.PI / 180;
+            let noise = (Math.random() - 0.5) * 0.2;
 
-            currentState = getState(ball.x, ball.dx, power);
+            ball.dx = Math.sin(rad + noise) * power;
+            ball.dy = -Math.cos(rad + noise) * power;
+
+            currentState = getState(ball.x, ball.dx);
             currentAction = chooseAction(currentState);
 
+            if (currentAction === 0) {
+                currentAction = Math.random() < 0.5 ? -1 : 1;
+            }
+
             goalie.direction = currentAction;
+            diveTimer = 18; // ← dive duration
         }
 
         // MOVE BALL
@@ -217,54 +174,120 @@ let loop = GameLoop({
             ball.y += ball.dy;
         }
 
-        // MOVE GOALIE
-        if (goalie.direction === -1) goalie.x -= goalie.speed;
-        if (goalie.direction === 1) goalie.x += goalie.speed;
+        // GOALIE MOVEMENT
+        if (!ball.moving) {
+            // patrol
+            goalie.x += goalie.direction * goalie.speed;
 
-        goalie.x = Math.max(GOAL_LEFT, Math.min(goalie.x, GOAL_RIGHT - goalie.width));
+            if (goalie.x <= GOAL_LEFT) goalie.direction = 1;
+            if (goalie.x + goalie.width >= GOAL_RIGHT) goalie.direction = -1;
 
-        // COLLISION
-        if (ball.moving) {
-            const hitGoalie =
-                ball.y < SAVE_ZONE_Y &&
-                ball.x + ball.radius > goalie.x &&
-                ball.x - ball.radius < goalie.x + goalie.width &&
-                ball.y - ball.radius < goalie.y + goalie.height &&
-                ball.y + ball.radius > goalie.y;
-
-            if (hitGoalie) {
-                result = "SAVED!";
-                shots++;
-
-                updateQ(currentState, currentAction, +1);
-                resetBall();
-
-            } else if (ball.y <= GOAL_Y) {
-                const withinPosts =
-                    ball.x + ball.radius > GOAL_LEFT &&
-                    ball.x - ball.radius < GOAL_RIGHT;
-
-                if (withinPosts) {
-                    result = "GOAL!";
-                    score++;
-                    updateQ(currentState, currentAction, -1);
-                } else {
-                    result = "WIDE!";
-                    updateQ(currentState, currentAction, 0);
-                }
-
-                shots++;
-                resetBall();
+            goalie.y = goalie.baseY;
+        }
+        else {
+            if (diveTimer > 0) {
+                // DIVE (fast + forward motion)
+                goalie.x += currentAction * (goalie.speed * 3);
+                goalie.y += 1.2; // forward motion
+                diveTimer--;
+            }
+            else {
+                // recovery (snap back)
+                goalie.y += (goalie.baseY - goalie.y) * 0.2;
             }
         }
 
-        if (shots >= MAX_SHOTS) {
-            finalResult = "Final Score: " + score + "/" + MAX_SHOTS;
-            result = finalResult;
+        // clamp
+        goalie.x = Math.max(GOAL_LEFT, Math.min(goalie.x, GOAL_RIGHT - goalie.width));
 
+        // DEFENDER COLLISION (UNCHANGED)
+        for (let d of defenders) {
+            let cx = d.x + d.width / 2;
+            let cy = d.y + d.height / 2;
+            let angle = d.angle * Math.PI / 180;
+
+            let cos = Math.cos(-angle);
+            let sin = Math.sin(-angle);
+
+            let relX = ball.x - cx;
+            let relY = ball.y - cy;
+
+            let localX = relX * cos - relY * sin;
+            let localY = relX * sin + relY * cos;
+
+            if (Math.abs(localX) < d.width / 2 &&
+                Math.abs(localY) < d.height / 2 &&
+                bounceCooldown === 0) {
+
+                let overlapX = d.width / 2 - Math.abs(localX);
+                let overlapY = d.height / 2 - Math.abs(localY);
+
+                let nx = 0, ny = 0;
+
+                if (overlapX < overlapY) {
+                    nx = localX > 0 ? 1 : -1;
+                } else {
+                    ny = localY > 0 ? 1 : -1;
+                }
+
+                let cosA = Math.cos(angle);
+                let sinA = Math.sin(angle);
+
+                let worldNX = nx * cosA - ny * sinA;
+                let worldNY = nx * sinA + ny * cosA;
+
+                let dot = ball.dx * worldNX + ball.dy * worldNY;
+
+                ball.dx -= 2 * dot * worldNX;
+                ball.dy -= 2 * dot * worldNY;
+
+                bounceCooldown = 10;
+            }
+        }
+
+        if (bounceCooldown > 0) bounceCooldown--;
+
+        // GOALIE HIT
+        let hitGoalie =
+            ball.y < SAVE_ZONE_Y &&
+            ball.x > goalie.x &&
+            ball.x < goalie.x + goalie.width;
+
+        if (hitGoalie) {
+            result = "SAVED!";
+            updateQ(currentState, currentAction, +1);
+            shotsLeft--;
+            resetBall();
+        }
+
+        // GOAL
+        else if (ball.y <= GOAL_Y) {
+            let goal = ball.x > GOAL_LEFT && ball.x < GOAL_RIGHT;
+
+            if (goal) {
+                result = "LEVEL UP!";
+                updateQ(currentState, currentAction, -1);
+                level++;
+                gameStarted = false;
+            } else {
+                result = "MISS";
+            }
+
+            shotsLeft--;
+            resetBall();
+        }
+
+        // OUT
+        if (ball.y > canvas.height) {
+            result = "MISS";
+            shotsLeft--;
+            resetBall();
+        }
+
+        // FAIL
+        if (shotsLeft <= 0 && gameStarted) {
+            result = "FAILED";
             gameStarted = false;
-            score = 0;
-            shots = 0;
         }
     },
 
@@ -273,53 +296,52 @@ let loop = GameLoop({
 
         if (!gameStarted) {
             context.fillStyle = "white";
-            context.font = "50px Arial";
-            context.fillText("TOP BINS", 280, 200);
-
-            context.font = "25px Arial";
-            context.fillText("Press ENTER to Play", 270, 300);
-
-            if (finalResult) {
-                context.font = "30px Arial";
-                context.fillText(finalResult, 230, 400);
-            }
+            context.font = "40px Arial";
+            context.fillText("TOP BINS", 300, 200);
+            context.fillText(result, 300, 300);
+            context.fillText("Press ENTER", 280, 400);
             return;
         }
 
         context.fillStyle = "white";
-        context.font = "30px Arial";
-        context.fillText("TOP BINS", 320, 40);
+        context.fillText("Level: " + level, 20, 30);
+        context.fillText("Shots: " + shotsLeft, 20, 60);
 
-        context.font = "20px Arial";
-        context.fillText("← → Aim   ↑ Power   ↓ Center   SPACE Shoot", 200, 585);
-        context.fillText("Score: " + score + "/" + shots, 650, 30);
-
-        context.font = "30px Arial";
-        context.fillText(result, 330, 200);
-
-        context.fillStyle = "white";
+        // GOAL
         context.fillRect(GOAL_LEFT, GOAL_Y, GOAL_RIGHT - GOAL_LEFT, 20);
 
-        context.fillStyle = goalie.direction === 0 ? "yellow" : "red";
+        // DEFENDERS
+        defenders.forEach(d => {
+            context.save();
+            context.translate(d.x + d.width / 2, d.y + d.height / 2);
+            context.rotate(d.angle * Math.PI / 180);
+            context.fillStyle = "blue";
+            context.fillRect(-d.width / 2, -d.height / 2, d.width, d.height);
+            context.restore();
+        });
+
+        // GOALIE
+        context.fillStyle = "red";
         context.fillRect(goalie.x, goalie.y, goalie.width, goalie.height);
 
+        // BALL
         context.beginPath();
         context.arc(ball.x, ball.y, ball.radius, 0, Math.PI * 2);
         context.fillStyle = "black";
         context.fill();
 
-        // AIM + POWER VISUALS (RESTORED)
+        // AIM
         if (!ball.moving) {
-            const rad = (aimAngle * Math.PI) / 180;
-            const len = 40;
-
+            let rad = aimAngle * Math.PI / 180;
             context.beginPath();
             context.moveTo(ball.x, ball.y);
-            context.lineTo(ball.x + Math.sin(rad)*len, ball.y - Math.cos(rad)*len);
+            context.lineTo(
+                ball.x + Math.sin(rad) * 40,
+                ball.y - Math.cos(rad) * 40
+            );
             context.strokeStyle = "white";
             context.stroke();
 
-            context.fillStyle = "white";
             context.fillText("Power: " + power.toFixed(1), 20, 560);
         }
     }
