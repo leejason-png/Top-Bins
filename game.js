@@ -9,7 +9,7 @@ initKeys();
 
 canvas.width = 800;
 canvas.height = 600;
-canvas.style.background = "#2e8b57"; // ← YOU LOST THIS
+canvas.style.background = "#2e8b57";
 
 const GOAL_LEFT = 250;
 const GOAL_RIGHT = 550;
@@ -19,13 +19,11 @@ const SAVE_ZONE_Y = 120;
 let ball = createBall(390, 500);
 let goalie = createGoalie();
 let defenders = [];
-
 let bounceCooldown = { value: 0 };
 
 let gameStarted = false;
 let level = 1;
 let shotsLeft = 3;
-
 let aimAngle = 0;
 let power = 6;
 
@@ -34,9 +32,11 @@ let currentAction = null;
 
 let loop = GameLoop({
     update() {
+
         // START
         if (!gameStarted && keyPressed("enter")) {
             defenders = generateDefenders(level);
+            shotsLeft = 3;
             gameStarted = true;
         }
 
@@ -51,7 +51,7 @@ let loop = GameLoop({
             if (keyPressed("arrowup")) {
                 power = Math.min(12, power + 0.1);
             } else {
-                power = Math.max(4, power - 0.05); // smoother decay
+                power = Math.max(4, power - 0.05);
             }
         }
 
@@ -74,7 +74,7 @@ let loop = GameLoop({
         updateGoalie(goalie, ball, currentAction, GOAL_LEFT, GOAL_RIGHT);
         handleDefenderCollision(ball, defenders, bounceCooldown);
 
-        // GOALIE SAVE
+        // SAVE
         let hitGoalie =
             ball.y < SAVE_ZONE_Y &&
             ball.x > goalie.x &&
@@ -93,6 +93,10 @@ let loop = GameLoop({
             if (goal) {
                 updateQ(currentState, currentAction, -1);
                 level++;
+
+                // 🔥 THIS WAS YOUR MISSING LINE
+                defenders = generateDefenders(level);
+
                 gameStarted = false;
             }
 
@@ -154,12 +158,14 @@ let loop = GameLoop({
         // AIM LINE
         if (!ball.moving) {
             let rad = aimAngle * Math.PI / 180;
+
             context.beginPath();
             context.moveTo(ball.x, ball.y);
             context.lineTo(
                 ball.x + Math.sin(rad) * 40,
                 ball.y - Math.cos(rad) * 40
             );
+
             context.strokeStyle = "white";
             context.stroke();
 
