@@ -1,18 +1,39 @@
 export function generateDefenders(level) {
     if (level === 1) {
         return [{ x: 550, y: 250, width: 20, height: 100, angle: 0 }];
-    } else if (level === 2) {
+    }
+
+    if (level === 2) {
         return [
             { x: 280, y: 300, width: 120, height: 20, angle: 15 },
             { x: 400, y: 200, width: 120, height: 20, angle: 30 }
         ];
-    } else {
+    }
+
+    if (level === 3) {
         return [
             { x: 250, y: 320, width: 120, height: 20, angle: 25 },
             { x: 420, y: 260, width: 120, height: 20, angle: -25 },
             { x: 330, y: 180, width: 120, height: 20, angle: 15 }
         ];
     }
+
+    if (level === 4) {
+        return [
+            { x: 210, y: 340, width: 145, height: 20, angle: 18 },
+            { x: 455, y: 340, width: 145, height: 20, angle: -18 },
+            { x: 305, y: 250, width: 120, height: 20, angle: -32 },
+            { x: 430, y: 190, width: 115, height: 20, angle: 26 }
+        ];
+    }
+
+    return [
+        { x: 185, y: 365, width: 155, height: 20, angle: 16 },
+        { x: 465, y: 365, width: 155, height: 20, angle: -16 },
+        { x: 275, y: 285, width: 135, height: 20, angle: -30 },
+        { x: 430, y: 255, width: 135, height: 20, angle: 30 },
+        { x: 345, y: 175, width: 130, height: 20, angle: 0 }
+    ];
 }
 
 export function handleDefenderCollision(ball, defenders, bounceCooldownRef) {
