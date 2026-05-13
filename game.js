@@ -11,19 +11,19 @@ canvas.width = 900;
 canvas.height = 650;
 canvas.style.background = "#2e8b57";
 
+const downloadMusicButton = document.getElementById("downloadMusic");
+
 const GOAL_LEFT = 260;
 const GOAL_RIGHT = 640;
 const GOAL_Y = 64;
 const SAVE_ZONE_Y = 132;
 const MAX_KICKS = 5;
 const START_LEVEL = 1;
-const POST_SOUND_URL = "https://cdn.discordapp.com/attachments/1446573420597743698/1503431293147283548/The_Ball_hits_the_Post_sound_effect.mp3?ex=6a035300&is=6a020180&hm=18e2f25e6345d40cfa32fa1f8e37e3d7e42ba6a7009f90ef47d27ecb19af0f0f&";
 const COMMENTARY = [
     "What a strike!",
     "The keeper had no chance!",
     "A nerveless penalty.",
     "Brilliant reflexes from the keeper.",
-    "That clipped the frame!",
     "The crowd can barely watch."
 ];
 
@@ -58,7 +58,6 @@ let shotSettled = false;
 let audio = null;
 let crowdGain = null;
 let noiseSource = null;
-let postAudio = null;
 
 const keys = { down: new Set(), pressed: new Set() };
 window.addEventListener("keydown", event => {
@@ -73,6 +72,13 @@ window.addEventListener("keydown", event => {
 window.addEventListener("keyup", event => {
     keys.down.delete(event.key.toLowerCase());
 });
+
+if (downloadMusicButton) {
+    downloadMusicButton.addEventListener("click", event => {
+        event.stopPropagation();
+        downloadMusic();
+    });
+}
 
 function takeKey(key) {
     key = key.toLowerCase();
@@ -114,11 +120,6 @@ function ensureAudio() {
     noiseSource.loop = true;
     noiseSource.connect(filter);
     noiseSource.start();
-
-    postAudio = new Audio(POST_SOUND_URL);
-    postAudio.preload = "auto";
-    postAudio.volume = 0.85;
-    postAudio.load();
 }
 
 function playTone(type, frequency, duration, gainValue) {
@@ -164,27 +165,81 @@ function netSound() {
     playNoise(0.45, 0.12, 1750);
 }
 
-function generatedPostSound() {
-    playTone("square", 520, 0.28, 0.25);
-    playTone("sine", 900, 0.16, 0.12);
-}
-
-function postSound() {
-    if (!postAudio) {
-        generatedPostSound();
-        return;
-    }
-
-    const sound = postAudio.cloneNode();
-    sound.volume = postAudio.volume;
-    const played = sound.play();
-    if (played && typeof played.catch === "function") {
-        played.catch(() => generatedPostSound());
-    }
+function cheerSound() {
+    playNoise(0.95, 0.22, 1150);
+    playTone("sine", 660, 0.16, 0.08);
+    playTone("sine", 880, 0.2, 0.07);
+    window.setTimeout(() => {
+        playTone("triangle", 740, 0.18, 0.06);
+        playNoise(0.55, 0.16, 900);
+    }, 140);
 }
 
 function saveSound() {
     playNoise(0.2, 0.18, 260);
+}
+
+function downloadMusic() {
+    const blob = createMusicBlob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "top-bins-theme.wav";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+}
+
+function createMusicBlob() {
+    const sampleRate = 44100;
+    const duration = 9;
+    const samples = new Int16Array(sampleRate * duration);
+    const notes = [196, 247, 294, 330, 294, 247, 220, 196];
+
+    for (let i = 0; i < samples.length; i++) {
+        const time = i / sampleRate;
+        const beat = Math.floor(time * 2) % notes.length;
+        const note = notes[beat];
+        const bass = Math.sin(2 * Math.PI * (note / 2) * time) * 0.22;
+        const lead = Math.sin(2 * Math.PI * note * time) * 0.28;
+        const harmony = Math.sin(2 * Math.PI * note * 1.5 * time) * 0.12;
+        const kick = Math.pow(1 - (time * 2 % 1), 16) * 0.28;
+        const sample = Math.max(-1, Math.min(1, bass + lead + harmony + kick));
+        samples[i] = sample * 32767;
+    }
+
+    return new Blob([encodeWav(samples, sampleRate)], { type: "audio/wav" });
+}
+
+function encodeWav(samples, sampleRate) {
+    const buffer = new ArrayBuffer(44 + samples.length * 2);
+    const view = new DataView(buffer);
+    writeString(view, 0, "RIFF");
+    view.setUint32(4, 36 + samples.length * 2, true);
+    writeString(view, 8, "WAVE");
+    writeString(view, 12, "fmt ");
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true);
+    view.setUint16(22, 1, true);
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, sampleRate * 2, true);
+    view.setUint16(32, 2, true);
+    view.setUint16(34, 16, true);
+    writeString(view, 36, "data");
+    view.setUint32(40, samples.length * 2, true);
+
+    for (let i = 0; i < samples.length; i++) {
+        view.setInt16(44 + i * 2, samples[i], true);
+    }
+
+    return buffer;
+}
+
+function writeString(view, offset, text) {
+    for (let i = 0; i < text.length; i++) {
+        view.setUint8(offset + i, text.charCodeAt(i));
+    }
 }
 
 function startGame() {
@@ -233,15 +288,15 @@ function finishKick(outcome) {
         crowdMood = 1;
         crowdDrop = 0;
         netSound();
+        cheerSound();
     } else {
         goalieScore++;
-        overlayText = outcome === "saved" ? "SAVED!" : outcome === "post" ? "POST!" : "MISSED!";
+        overlayText = outcome === "saved" ? "SAVED!" : "MISSED!";
         updateQ(currentState, currentAction, +1);
-        flashTimer = outcome === "post" ? 12 : 9;
+        flashTimer = 9;
         crowdMood = 0;
         crowdDrop = 1;
         if (outcome === "saved") saveSound();
-        if (outcome === "post") postSound();
     }
 
     overlayTimer = 95;
@@ -255,8 +310,7 @@ function finishKick(outcome) {
 function randomCommentary(outcome) {
     if (outcome === "goal") return COMMENTARY[Math.floor(Math.random() * 3)];
     if (outcome === "saved") return COMMENTARY[3];
-    if (outcome === "post") return COMMENTARY[4];
-    return COMMENTARY[5];
+    return COMMENTARY[4];
 }
 
 function isShootoutOver() {
@@ -348,14 +402,14 @@ function checkOutcome() {
         return;
     }
 
-    const hitLeftPost = Math.abs(ball.x - GOAL_LEFT) < ball.radius + 4 && ball.y <= GOAL_Y + 24;
-    const hitRightPost = Math.abs(ball.x - GOAL_RIGHT) < ball.radius + 4 && ball.y <= GOAL_Y + 24;
+    const hitLeftFrame = Math.abs(ball.x - GOAL_LEFT) < ball.radius + 4 && ball.y <= GOAL_Y + 24;
+    const hitRightFrame = Math.abs(ball.x - GOAL_RIGHT) < ball.radius + 4 && ball.y <= GOAL_Y + 24;
     const hitCrossbar = ball.x > GOAL_LEFT && ball.x < GOAL_RIGHT && Math.abs(ball.y - GOAL_Y) < ball.radius + 5;
 
-    if (hitLeftPost || hitRightPost || hitCrossbar) {
+    if (hitLeftFrame || hitRightFrame || hitCrossbar) {
         ball.dx *= -0.45;
         ball.dy *= -0.35;
-        finishKick("post");
+        finishKick("goal");
         return;
     }
 
@@ -626,6 +680,8 @@ function drawPowerHud() {
 }
 
 function renderGame() {
+    if (downloadMusicButton) downloadMusicButton.hidden = gameState !== "menu";
+
     context.clearRect(0, 0, canvas.width, canvas.height);
 
     const zoom = gameState === "playing" && !ball.moving ? 1 + tension * 0.035 : 1;
