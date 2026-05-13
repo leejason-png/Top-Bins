@@ -1,5 +1,6 @@
 const START_X = 390;
 const START_Y = 500;
+const SHOT_POWER_SCALE = 0.82;
 
 export function createBall(x, y) {
     return {
@@ -15,9 +16,10 @@ export function createBall(x, y) {
 export function shootBall(ball, aimAngle, power) {
     let rad = aimAngle * Math.PI / 180;
     let noise = (Math.random() - 0.5) * 0.2;
+    let shotPower = power * SHOT_POWER_SCALE;
 
-    ball.dx = Math.sin(rad + noise) * power;
-    ball.dy = -Math.cos(rad + noise) * power;
+    ball.dx = Math.sin(rad + noise) * shotPower;
+    ball.dy = -Math.cos(rad + noise) * shotPower;
     ball.moving = true;
 }
 

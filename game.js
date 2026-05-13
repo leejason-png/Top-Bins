@@ -343,6 +343,11 @@ function checkOutcome() {
         return;
     }
 
+    if (ball.y <= GOAL_Y) {
+        finishKick(ball.x > GOAL_LEFT && ball.x < GOAL_RIGHT ? "goal" : "miss");
+        return;
+    }
+
     const hitLeftPost = Math.abs(ball.x - GOAL_LEFT) < ball.radius + 4 && ball.y <= GOAL_Y + 24;
     const hitRightPost = Math.abs(ball.x - GOAL_RIGHT) < ball.radius + 4 && ball.y <= GOAL_Y + 24;
     const hitCrossbar = ball.x > GOAL_LEFT && ball.x < GOAL_RIGHT && Math.abs(ball.y - GOAL_Y) < ball.radius + 5;
@@ -350,17 +355,7 @@ function checkOutcome() {
     if (hitLeftPost || hitRightPost || hitCrossbar) {
         ball.dx *= -0.45;
         ball.dy *= -0.35;
-        if (Math.random() < 0.35) {
-            postSound();
-            finishKick("goal");
-        } else {
-            finishKick("post");
-        }
-        return;
-    }
-
-    if (ball.y <= GOAL_Y) {
-        finishKick(ball.x > GOAL_LEFT && ball.x < GOAL_RIGHT ? "goal" : "miss");
+        finishKick("post");
         return;
     }
 
